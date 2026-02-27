@@ -62,6 +62,14 @@ export const authService = {
     return supabase.auth.onAuthStateChange((_event, session) => {
       callback(session);
     });
+  },
+
+  // Recuperar contraseña por correo
+  async resetPassword(email) {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + '/reset-password',
+    });
+    if (error) throw error;
   }
 };
 

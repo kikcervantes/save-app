@@ -47,7 +47,8 @@ export const ClientApp = ({ user, onLogout, onSwitchToMerchant }) => {
     if (!saved) return MOCK_MERCHANTS;
     try {
       const biz = JSON.parse(saved);
-      // Give it a stable string id so it doesn't collide with numeric mock ids
+      // Only show the registered merchant to clients if it has been approved
+      if (!biz.verified && biz.verificationStatus !== 'approved') return MOCK_MERCHANTS;
       const bizEntry = {
         ...biz,
         id: biz.id || 'biz_registered',
@@ -58,10 +59,11 @@ export const ClientApp = ({ user, onLogout, onSwitchToMerchant }) => {
         totalSaved: biz.totalSaved || 0,
         isPopular: false,
         isNew: true,
-        badges: biz.verified ? ['Verificado ✓'] : ['Pendiente'],
-        coverImage: biz.coverImage || null,  // ← preserve photo uploaded by merchant
+        badges: ['Verificado ✓'],
+        coverImage: biz.coverImage || null,
+        // Use coverImage as the display icon if available
+        image: biz.coverImage ? biz.coverImage : (biz.image || '🍽️'),
       };
-      // Replace if already in list, otherwise prepend
       const already = MOCK_MERCHANTS.find(m => String(m.id) === String(biz.id));
       if (already) return MOCK_MERCHANTS.map(m => String(m.id) === String(biz.id) ? bizEntry : m);
       return [bizEntry, ...MOCK_MERCHANTS];

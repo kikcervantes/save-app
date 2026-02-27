@@ -65,8 +65,10 @@ export const validateEmail = (email) => {
 };
 
 export const validatePhone = (phone) => {
-  const re = /^\+?[\d\s-]{10,}$/;
-  return re.test(phone);
+  // Remove spaces, dashes, parentheses
+  const clean = phone.replace(/[\s\-\(\)\+]/g, '');
+  // Must be exactly 10 digits (Mexico), or 12 digits with country code 52
+  return /^\d{10}$/.test(clean) || /^52\d{10}$/.test(clean);
 };
 
 export const generateOrderCode = () => {

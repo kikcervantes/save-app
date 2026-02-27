@@ -109,13 +109,18 @@ const SaveApp = () => {
   const [user, setUser]       = useState(null);
   const [authMode, setAuthMode] = useState('login');
   const [authForm, setAuthForm] = useState({
-    email: '', password: '', name: '', phone: '',
+    email: '', password: '', confirmPassword: '', name: '', phone: '',
     businessName: '', businessType: '', businessAddress: '', businessLocation: null,
   });
-  const [showPassword, setShowPassword] = useState(false);
-  const [authLoading, setAuthLoading]   = useState(false);
-  const [errors, setErrors]             = useState({});
-  const [sessionLoading, setSessionLoading] = useState(true);
+  const [showPassword,        setShowPassword]        = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [authLoading,         setAuthLoading]         = useState(false);
+  const [errors,              setErrors]              = useState({});
+  const [sessionLoading,      setSessionLoading]      = useState(true);
+  const [showForgotPassword,  setShowForgotPassword]  = useState(false);
+  const [resetEmail,          setResetEmail]          = useState('');
+  const [resetLoading,        setResetLoading]        = useState(false);
+  const [resetSent,           setResetSent]           = useState(false);
 
   const { notifications, showNotification, removeNotification } = useNotification();
 
@@ -145,7 +150,7 @@ const SaveApp = () => {
   }, []);
 
   useEffect(() => {
-    setAuthForm({ email: '', password: '', name: '', phone: '', businessName: '', businessType: '', businessAddress: '', businessLocation: null });
+    setAuthForm({ email: '', password: '', confirmPassword: '', name: '', phone: '', businessName: '', businessType: '', businessAddress: '', businessLocation: null });
     setErrors({});
   }, [authMode]);
 
@@ -154,12 +159,14 @@ const SaveApp = () => {
     if (!validateEmail(authForm.email))    e.email    = 'Email inválido';
     if (authForm.password.length < 6)      e.password = 'Mínimo 6 caracteres';
     if (authMode !== 'login') {
+      if (authForm.password !== authForm.confirmPassword)
+        e.confirmPassword = 'Las contraseñas no coinciden';
       if (!authForm.name.trim())           e.name  = 'Nombre requerido';
-      if (!validatePhone(authForm.phone))  e.phone = 'Teléfono inválido (mín. 10 dígitos)';
+      if (!validatePhone(authForm.phone))  e.phone = 'Teléfono inválido — escribe 10 dígitos (ej: 5512345678)';
     }
     if (authMode === 'business') {
-      if (!authForm.businessName.trim())   e.businessName = 'Nombre del negocio requerido';
-      if (!authForm.businessType)          e.businessType = 'Tipo de negocio requerido';
+      if (!authForm.businessName.trim())    e.businessName    = 'Nombre del negocio requerido';
+      if (!authForm.businessType)           e.businessType    = 'Tipo de negocio requerido';
       if (!authForm.businessAddress.trim()) e.businessAddress = 'La dirección es requerida';
     }
     setErrors(e);
@@ -227,12 +234,12 @@ const SaveApp = () => {
       }
     } catch (err) {
       console.error('Auth error:', err);
-      // Translate common Supabase errors to Spanish
       const msg = err.message || '';
-      if (msg.includes('Invalid login credentials'))   showNotification('Email o contraseña incorrectos', 'error');
-      else if (msg.includes('Email not confirmed'))    showNotification('Confirma tu email antes de entrar', 'error');
-      else if (msg.includes('User already registered')) showNotification('Ya existe una cuenta con ese email', 'error');
-      else if (msg.includes('Password should be'))     showNotification('La contraseña debe tener al menos 6 caracteres', 'error');
+      if (msg.includes('Invalid login credentials'))    showNotification('Email o contraseña incorrectos', 'error');
+      else if (msg.includes('Email not confirmed'))     showNotification('Confirma tu email antes de entrar. Revisa tu bandeja de entrada.', 'error');
+      else if (msg.includes('User already registered')) showNotification('Ya existe una cuenta con ese email. Intenta iniciar sesión.', 'error');
+      else if (msg.includes('Password should be'))      showNotification('La contraseña debe tener al menos 6 caracteres', 'error');
+      else if (msg.includes('email'))                   showNotification('Ya existe una cuenta con ese email. Intenta iniciar sesión.', 'error');
       else showNotification('Error: ' + msg, 'error');
     } finally {
       setAuthLoading(false);
@@ -255,6 +262,20 @@ const SaveApp = () => {
     };
     createPendingMerchant();
   }, [user]);
+
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    if (!validateEmail(resetEmail)) return;
+    setResetLoading(true);
+    try {
+      await authService.resetPassword(resetEmail);
+      setResetSent(true);
+    } catch {
+      setResetSent(true); // show success anyway to avoid email enumeration
+    } finally {
+      setResetLoading(false);
+    }
+  };
 
   const handleLogout = async () => {
     try {
@@ -331,6 +352,35 @@ const SaveApp = () => {
                 {errors.password && <p className="text-xs text-red-500 mt-1">{errors.password}</p>}
               </div>
 
+              {/* Confirm password — only on register */}
+              {authMode !== 'login' && (
+                <div className="relative">
+                  <Lock className="absolute left-4 top-3.5 text-gray-400" size={18}/>
+                  <input type={showConfirmPassword ? 'text' : 'password'} placeholder="Confirmar contraseña" value={authForm.confirmPassword}
+                    onChange={e => setAuthForm({...authForm, confirmPassword: e.target.value})}
+                    className={`w-full pl-12 pr-12 py-3.5 bg-gray-50 border-2 rounded-xl focus:bg-white focus:border-green-500 outline-none transition-all ${errors.confirmPassword ? 'border-red-500' : authForm.confirmPassword && authForm.password === authForm.confirmPassword ? 'border-green-400' : 'border-gray-200'}`}/>
+                  <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-4 top-3.5 text-gray-400 hover:text-gray-600 focus:outline-none">
+                    {showConfirmPassword ? <EyeOff size={18}/> : <Eye size={18}/>}
+                  </button>
+                  {errors.confirmPassword
+                    ? <p className="text-xs text-red-500 mt-1">{errors.confirmPassword}</p>
+                    : authForm.confirmPassword && authForm.password === authForm.confirmPassword
+                    ? <p className="text-xs text-green-600 mt-1 flex items-center gap-1"><CheckCircle size={11}/> Contraseñas coinciden</p>
+                    : null
+                  }
+                </div>
+              )}
+
+              {/* Forgot password link — only on login */}
+              {authMode === 'login' && (
+                <div className="text-right -mt-2">
+                  <button type="button" onClick={() => { setShowForgotPassword(true); setResetEmail(authForm.email); setResetSent(false); }}
+                    className="text-xs text-green-600 font-semibold hover:underline">
+                    ¿Olvidaste tu contraseña?
+                  </button>
+                </div>
+              )}
+
               {/* Name + Phone (register & business) */}
               {authMode !== 'login' && (
                 <>
@@ -397,8 +447,113 @@ const SaveApp = () => {
             </div>
           </div>
         </div>
+
+        {/* Forgot password modal */}
+        {showForgotPassword && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => setShowForgotPassword(false)}>
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-8" onClick={e => e.stopPropagation()}>
+              {resetSent ? (
+                <div className="text-center">
+                  <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <CheckCircle size={32} className="text-green-500" />
+                  </div>
+                  <h3 className="text-xl font-bold text-gray-900 mb-2">Revisa tu correo</h3>
+                  <p className="text-gray-500 text-sm mb-6">
+                    Si existe una cuenta con <strong>{resetEmail}</strong>, recibirás un enlace para restablecer tu contraseña en los próximos minutos.
+                  </p>
+                  <p className="text-xs text-gray-400 mb-4">¿No llegó? Revisa la carpeta de spam.</p>
+                  <button onClick={() => setShowForgotPassword(false)}
+                    className="w-full bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700">
+                    Entendido
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="text-center mb-6">
+                    <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <Mail size={28} className="text-green-600" />
+                    </div>
+                    <h3 className="text-xl font-bold text-gray-900">Recuperar contraseña</h3>
+                    <p className="text-gray-500 text-sm mt-2">
+                      Escribe tu email y te enviamos un enlace para crear una nueva contraseña
+                    </p>
+                  </div>
+                  <form onSubmit={handleResetPassword} className="space-y-4">
+                    <div className="relative">
+                      <Mail className="absolute left-4 top-3.5 text-gray-400" size={18}/>
+                      <input type="email" placeholder="tu@email.com" value={resetEmail}
+                        onChange={e => setResetEmail(e.target.value)}
+                        className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl focus:bg-white focus:border-green-500 outline-none transition-all"
+                        autoFocus />
+                    </div>
+                    <button type="submit" disabled={resetLoading || !validateEmail(resetEmail)}
+                      className="w-full bg-green-600 text-white py-3.5 rounded-xl font-bold hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2">
+                      {resetLoading ? <LoadingSpinner size="sm"/> : <><ArrowRight size={18}/> Enviar enlace</>}
+                    </button>
+                    <button type="button" onClick={() => setShowForgotPassword(false)}
+                      className="w-full py-3 border-2 border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-50">
+                      Cancelar
+                    </button>
+                  </form>
+                </>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     );
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => setShowForgotPassword(false)}>
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-8" onClick={e => e.stopPropagation()}>
+              {resetSent ? (
+                <div className="text-center">
+                  <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <CheckCircle size={32} className="text-green-500" />
+                  </div>
+                  <h3 className="text-xl font-bold text-gray-900 mb-2">Revisa tu correo</h3>
+                  <p className="text-gray-500 text-sm mb-6">
+                    Si existe una cuenta con <strong>{resetEmail}</strong>, recibirás un enlace para restablecer tu contraseña en los próximos minutos.
+                  </p>
+                  <p className="text-xs text-gray-400 mb-4">¿No llegó? Revisa la carpeta de spam.</p>
+                  <button onClick={() => setShowForgotPassword(false)}
+                    className="w-full bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700">
+                    Entendido
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="text-center mb-6">
+                    <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <Mail size={28} className="text-green-600" />
+                    </div>
+                    <h3 className="text-xl font-bold text-gray-900">Recuperar contraseña</h3>
+                    <p className="text-gray-500 text-sm mt-2">
+                      Escribe tu email y te enviamos un enlace para crear una nueva contraseña
+                    </p>
+                  </div>
+                  <form onSubmit={handleResetPassword} className="space-y-4">
+                    <div className="relative">
+                      <Mail className="absolute left-4 top-3.5 text-gray-400" size={18}/>
+                      <input type="email" placeholder="tu@email.com" value={resetEmail}
+                        onChange={e => setResetEmail(e.target.value)}
+                        className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border-2 border-gray-200 rounded-xl focus:bg-white focus:border-green-500 outline-none transition-all"
+                        autoFocus />
+                    </div>
+                    <button type="submit" disabled={resetLoading || !validateEmail(resetEmail)}
+                      className="w-full bg-green-600 text-white py-3.5 rounded-xl font-bold hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2">
+                      {resetLoading ? <LoadingSpinner size="sm"/> : <><ArrowRight size={18}/> Enviar enlace</>}
+                    </button>
+                    <button type="button" onClick={() => setShowForgotPassword(false)}
+                      className="w-full py-3 border-2 border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-50">
+                      Cancelar
+                    </button>
+                  </form>
+                </>
+              )}
+            </div>
+          </div>
+        )}
   }
 
   return (
