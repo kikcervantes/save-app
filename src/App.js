@@ -10,8 +10,13 @@ import { LoadingSpinner } from './components/shared/SkeletonLoader';
 import { ErrorBoundary } from './components/shared/ErrorBoundary';
 import { authService, merchantService } from './lib/supabase';
 
-const ClientApp  = lazy(() => import('./components/client/ClientApp').then(m => ({ default: m.ClientApp })));
+const ClientApp   = lazy(() => import('./components/client/ClientApp').then(m => ({ default: m.ClientApp })));
 const MerchantApp = lazy(() => import('./components/merchant/MerchantApp').then(m => ({ default: m.MerchantApp })));
+const AdminPanel  = lazy(() => import('./components/admin/AdminPanel').then(m => ({ default: m.AdminPanel })));
+
+// ── Tu contraseña de admin — cámbiala por algo seguro ──
+const ADMIN_EMAIL    = 'admin@save.mx';
+const ADMIN_PASSWORD = 'save-admin-2025';
 
 /* ─── Address Picker ─── */
 const AddressPicker = ({ value, onChange, error }) => {
@@ -168,6 +173,14 @@ const SaveApp = () => {
 
     try {
       if (authMode === 'login') {
+        // ── Detectar login de admin ──
+        if (authForm.email === ADMIN_EMAIL && authForm.password === ADMIN_PASSWORD) {
+          const adminUser = { id: 'admin', email: ADMIN_EMAIL, name: 'Administrador', type: 'admin' };
+          setUser(adminUser);
+          setIsAuthenticated(true);
+          return;
+        }
+
         // ── LOGIN con Supabase ──
         const { user: u } = await authService.signIn({
           email:    authForm.email,
@@ -391,7 +404,9 @@ const SaveApp = () => {
   return (
     <ErrorBoundary>
       <Suspense fallback={<LoadingSpinner fullScreen />}>
-        {user?.type === 'merchant' ? (
+        {user?.type === 'admin' ? (
+          <AdminPanel onLogout={handleLogout} />
+        ) : user?.type === 'merchant' ? (
           <MerchantApp user={user} onLogout={handleLogout} onSwitchToClient={switchToClient}/>
         ) : (
           <ClientApp user={user} onLogout={handleLogout} onSwitchToMerchant={switchToMerchant}/>

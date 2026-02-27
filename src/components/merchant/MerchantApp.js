@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Package, Camera, ShoppingBag, Clock, Settings, LogOut,
   X, Plus, Minus, Check, BarChart3, Edit2, MapPin, ChevronRight,
-  AlertCircle, Save, Navigation, Search, CheckCircle, Loader
+  AlertCircle, Save, Navigation, Search, CheckCircle, Loader,
+  Shield
 } from 'lucide-react';
 import { useLocalStorage, writeLocalStorage, readLocalStorage } from '../../hooks/useLocalStorage';
 import { merchantService, orderService } from '../../lib/supabase';
@@ -10,6 +11,7 @@ import { useNotification } from '../../hooks/useNotification';
 import { formatCurrency, formatDate } from '../../utils/helpers';
 import { NotificationContainer } from '../shared/NotificationContainer';
 import { LoadingSpinner } from '../shared/SkeletonLoader';
+import { VerificationFlow } from './VerificationFlow';
 
 /* ─── Address Picker ─── */
 const AddressPicker = ({ value, onChange, error }) => {
@@ -378,6 +380,7 @@ export const MerchantApp = ({ user, onLogout, onSwitchToClient }) => {
   const [orders, setOrders]                 = useLocalStorage('save-orders', []);
   const [showStockModal, setShowStockModal] = useState(false);
   const [showBagEditor, setShowBagEditor]   = useState(false);
+  const [showVerification, setShowVerification] = useState(false);
   const [newStock, setNewStock]             = useState(0);
   const [showQRScanner, setShowQRScanner]   = useState(false);
   const [scanResult, setScanResult]         = useState(null);
@@ -495,6 +498,7 @@ export const MerchantApp = ({ user, onLogout, onSwitchToClient }) => {
   return (
     <div className="max-w-lg mx-auto bg-gray-50 min-h-screen pb-24">
       <NotificationContainer notifications={notifications} onRemove={removeNotification}/>
+      {showVerification && <VerificationFlow merchant={myMerchant} onClose={() => setShowVerification(false)} />}
 
       {/* Header */}
       <div className="bg-gradient-to-br from-purple-600 via-purple-500 to-indigo-600 text-white p-6 pb-8 rounded-b-[2.5rem] shadow-xl">
@@ -524,6 +528,38 @@ export const MerchantApp = ({ user, onLogout, onSwitchToClient }) => {
       </div>
 
       <div className="p-4 space-y-4">
+        {/* Verification banner */}
+        {(() => {
+          const verif = JSON.parse(localStorage.getItem('save-verification') || 'null');
+          const status = verif?.status || 'draft';
+          if (status === 'approved') return (
+            <div className="bg-green-50 border border-green-200 rounded-2xl px-4 py-3 flex items-center gap-3">
+              <CheckCircle size={20} className="text-green-500 shrink-0" />
+              <p className="text-sm font-semibold text-green-700 flex-1">Negocio verificado ✓ — los clientes ven tu sello de confianza</p>
+            </div>
+          );
+          if (status === 'pending') return (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 flex items-center gap-3">
+              <Clock size={20} className="text-amber-500 shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-amber-700">Verificación en revisión</p>
+                <p className="text-xs text-amber-600">Responderemos en 24-48 horas hábiles</p>
+              </div>
+              <button onClick={() => setShowVerification(true)} className="text-xs text-amber-700 font-bold underline">Ver estado</button>
+            </div>
+          );
+          return (
+            <button onClick={() => setShowVerification(true)}
+              className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl px-4 py-3.5 flex items-center gap-3 hover:opacity-95 transition-opacity shadow-lg shadow-blue-600/20">
+              <Shield size={22} className="shrink-0" />
+              <div className="flex-1 text-left">
+                <p className="font-bold text-sm">Verifica tu negocio</p>
+                <p className="text-xs text-blue-100">Genera más confianza y mayor visibilidad</p>
+              </div>
+              <ChevronRight size={18} className="shrink-0" />
+            </button>
+          );
+        })()}
         {/* Quick actions */}
         <div className="grid grid-cols-2 gap-3">
           <button onClick={() => setShowBagEditor(true)}

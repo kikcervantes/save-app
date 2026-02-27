@@ -58,8 +58,8 @@ export const ClientApp = ({ user, onLogout, onSwitchToMerchant }) => {
         totalSaved: biz.totalSaved || 0,
         isPopular: false,
         isNew: true,
-        badges: ['Nuevo'],
-        coverImage: null,
+        badges: biz.verified ? ['Verificado ✓'] : ['Pendiente'],
+        coverImage: biz.coverImage || null,  // ← preserve photo uploaded by merchant
       };
       // Replace if already in list, otherwise prepend
       const already = MOCK_MERCHANTS.find(m => String(m.id) === String(biz.id));

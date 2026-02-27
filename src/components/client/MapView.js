@@ -1,153 +1,122 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, List, Navigation, X, SlidersHorizontal, Locate } from 'lucide-react';
+import { ArrowLeft, List, Navigation, X } from 'lucide-react';
 import { formatCurrency, calculateDistance, getGoogleMapsUrl } from '../../utils/helpers';
 
-// Leaflet loaded via CDN links in index.html (no import needed for CSS)
-// We load it dynamically so the app doesn't break if offline
-
-const RADIUS_OPTIONS = [0.5, 1, 2, 5, 10];
-
-/* ── Lightweight Leaflet wrapper ── */
+/* ── Leaflet map wrapper ── */
 const LeafletMap = ({ userLocation, merchants, selected, onSelect, radius }) => {
-  const containerRef = useRef(null);
-  const mapRef       = useRef(null);
-  const markersRef   = useRef([]);
-  const circleRef    = useRef(null);
+  const containerRef  = useRef(null);
+  const mapRef        = useRef(null);
+  const markersRef    = useRef([]);
+  const circleRef     = useRef(null);
   const userMarkerRef = useRef(null);
 
   // Init map once
   useEffect(() => {
-    if (!containerRef.current || mapRef.current) return;
-    if (!window.L) return; // Leaflet not loaded yet
-
-    const L = window.L;
-    const center = userLocation
-      ? [userLocation.lat, userLocation.lng]
-      : [19.4326, -99.1332]; // CDMX default
-
-    const map = L.map(containerRef.current, {
-      center,
-      zoom: 14,
-      zoomControl: false,
-    });
-
+    if (!containerRef.current || mapRef.current || !window.L) return;
+    const L      = window.L;
+    const center = userLocation ? [userLocation.lat, userLocation.lng] : [19.4326, -99.1332];
+    const map    = L.map(containerRef.current, { center, zoom: 14, zoomControl: false });
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap',
-      maxZoom: 19,
+      attribution: '© OpenStreetMap', maxZoom: 19,
     }).addTo(map);
-
     mapRef.current = map;
     return () => { map.remove(); mapRef.current = null; };
-  }, []);  // eslint-disable-line
+  }, []); // eslint-disable-line
 
-  // Update user location marker + radius circle
+  // User marker + radius circle — re-runs when radius changes
   useEffect(() => {
     if (!mapRef.current || !window.L || !userLocation) return;
-    const L = window.L;
+    const L   = window.L;
     const map = mapRef.current;
 
-    if (userMarkerRef.current) userMarkerRef.current.remove();
-    if (circleRef.current)    circleRef.current.remove();
+    if (userMarkerRef.current) { userMarkerRef.current.remove(); userMarkerRef.current = null; }
+    if (circleRef.current)     { circleRef.current.remove();     circleRef.current = null; }
 
-    // Blue pulsing dot for user
     const userIcon = L.divIcon({
       className: '',
       html: `<div style="width:16px;height:16px;background:#2563eb;border:3px solid white;border-radius:50%;box-shadow:0 0 0 6px rgba(37,99,235,0.25)"></div>`,
       iconAnchor: [8, 8],
     });
     userMarkerRef.current = L.marker([userLocation.lat, userLocation.lng], { icon: userIcon })
-      .addTo(map)
-      .bindPopup('<b>📍 Tú estás aquí</b>');
+      .addTo(map).bindPopup('<b>📍 Tú estás aquí</b>');
 
-    // Radius circle
     circleRef.current = L.circle([userLocation.lat, userLocation.lng], {
-      radius: radius * 1000,
-      color: '#16a34a', fillColor: '#16a34a', fillOpacity: 0.06, weight: 2, dashArray: '6 4',
+      radius:      radius * 1000,
+      color:       '#16a34a', fillColor: '#16a34a',
+      fillOpacity: 0.07, weight: 2, dashArray: '6 4',
     }).addTo(map);
+  }, [userLocation, radius]); // radius here is the key — circle rebuilds on every change
 
-    map.setView([userLocation.lat, userLocation.lng], map.getZoom());
-  }, [userLocation, radius]);
-
-  // Update merchant markers
+  // Merchant markers
   useEffect(() => {
     if (!mapRef.current || !window.L) return;
-    const L   = window.L;
-    const map = mapRef.current;
-
-    // Remove old markers
+    const L = window.L, map = mapRef.current;
     markersRef.current.forEach(m => m.remove());
     markersRef.current = [];
 
     merchants.forEach(merchant => {
       if (!merchant.location?.lat) return;
-      const isSelected = selected?.id === merchant.id;
-      const hasStock   = merchant.bagsAvailable > 0;
+      const isSel    = selected?.id === merchant.id;
+      const hasStock = merchant.bagsAvailable > 0;
+      const color    = isSel ? '#16a34a' : hasStock ? '#fff' : '#d1d5db';
+      const border   = isSel ? '#fff' : hasStock ? '#16a34a' : '#9ca3af';
+      const ring     = isSel ? 'box-shadow:0 0 0 4px rgba(22,163,74,0.4);' : '';
 
-      const color   = isSelected ? '#16a34a' : hasStock ? '#ffffff' : '#d1d5db';
-      const border  = isSelected ? '#ffffff' : hasStock ? '#16a34a' : '#9ca3af';
-      const emoji   = merchant.image || '🍽️';
-      const ringCss = isSelected ? 'box-shadow:0 0 0 4px rgba(22,163,74,0.4);' : '';
+      // Show photo thumbnail if available, otherwise emoji
+      const inner = merchant.coverImage
+        ? `<img src="${merchant.coverImage}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />`
+        : `<span style="font-size:18px">${merchant.image || '🍽️'}</span>`;
 
       const icon = L.divIcon({
         className: '',
-        html: `<div style="width:40px;height:40px;background:${color};border:3px solid ${border};border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;${ringCss}box-shadow:0 2px 8px rgba(0,0,0,0.25);cursor:pointer;">${emoji}</div>`,
-        iconAnchor: [20, 40],
-        iconSize: [40, 40],
+        html: `<div style="width:40px;height:40px;background:${color};border:3px solid ${border};border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden;${ring}box-shadow:0 2px 8px rgba(0,0,0,0.25);cursor:pointer;">${inner}</div>`,
+        iconAnchor: [20, 40], iconSize: [40, 40],
       });
 
       const marker = L.marker([merchant.location.lat, merchant.location.lng], { icon })
-        .addTo(map)
-        .on('click', () => onSelect(merchant));
-
+        .addTo(map).on('click', () => onSelect(merchant));
       markersRef.current.push(marker);
     });
   }, [merchants, selected]); // eslint-disable-line
 
-  // Pan to selected merchant
+  // Pan to selected
   useEffect(() => {
-    if (!mapRef.current || !selected?.location) return;
-    mapRef.current.panTo([selected.location.lat, selected.location.lng], { animate: true });
+    if (mapRef.current && selected?.location)
+      mapRef.current.panTo([selected.location.lat, selected.location.lng], { animate: true });
   }, [selected]);
 
   return <div ref={containerRef} style={{ width: '100%', height: '100%' }} />;
 };
 
-/* ── Leaflet CSS loader (injects into <head> once) ── */
+/* ── Leaflet CSS + JS loader ── */
 const useLeafletAssets = () => {
   const [ready, setReady] = useState(!!window.L);
-
   useEffect(() => {
     if (window.L) { setReady(true); return; }
-
-    // CSS
     if (!document.getElementById('leaflet-css')) {
-      const link = document.createElement('link');
-      link.id   = 'leaflet-css';
-      link.rel  = 'stylesheet';
-      link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+      const link = Object.assign(document.createElement('link'), {
+        id: 'leaflet-css', rel: 'stylesheet',
+        href: 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
+      });
       document.head.appendChild(link);
     }
-
-    // JS
     if (!document.getElementById('leaflet-js')) {
-      const script = document.createElement('script');
-      script.id  = 'leaflet-js';
-      script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+      const script = Object.assign(document.createElement('script'), {
+        id: 'leaflet-js', src: 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
+      });
       script.onload = () => setReady(true);
       document.head.appendChild(script);
     }
   }, []);
-
   return ready;
 };
 
-/* ── Main MapView component ── */
+/* ── Main MapView ── */
 export const MapView = ({ merchants, userLocation, favorites, onToggleFavorite, onSelectMerchant, onBack }) => {
   const leafletReady = useLeafletAssets();
-  const [selected,    setSelected]    = useState(null);
-  const [viewMode,    setViewMode]    = useState('map');
-  const [radius,      setRadius]      = useState(5);
-  const [showRadius,  setShowRadius]  = useState(false);
+  const [selected,  setSelected]  = useState(null);
+  const [viewMode,  setViewMode]  = useState('map');
+  const [radius,    setRadius]    = useState(5);   // km
 
   const visibleMerchants = merchants.filter(m => {
     if (!userLocation) return true;
@@ -155,39 +124,18 @@ export const MapView = ({ merchants, userLocation, favorites, onToggleFavorite, 
     return d === null || d <= radius;
   });
 
-  const handleNavigate = (m) => {
-    window.open(getGoogleMapsUrl(m.location.lat, m.location.lng, userLocation?.lat, userLocation?.lng), '_blank');
-  };
-
   return (
     <div className="h-screen flex flex-col bg-gray-50">
-      {/* Header */}
-      <div className="bg-white shadow-sm px-4 py-3 flex items-center gap-3 z-10 shrink-0">
-        <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
-          <ArrowLeft size={22} />
-        </button>
-        <div className="flex-1">
-          <h1 className="text-lg font-bold text-gray-900">Mapa</h1>
-          <p className="text-xs text-gray-500">{visibleMerchants.length} negocios · radio {radius} km</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {/* Radius picker */}
-          <div className="relative">
-            <button onClick={() => setShowRadius(r => !r)}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-semibold border-2 transition-all ${showRadius ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-600 border-gray-200'}`}>
-              <SlidersHorizontal size={14} /> {radius} km
-            </button>
-            {showRadius && (
-              <div className="absolute right-0 top-11 bg-white border border-gray-200 rounded-2xl shadow-xl p-3 z-50 flex flex-col gap-1 min-w-[100px]">
-                <p className="text-xs text-gray-400 font-semibold mb-1 text-center">Radio</p>
-                {RADIUS_OPTIONS.map(r => (
-                  <button key={r} onClick={() => { setRadius(r); setShowRadius(false); }}
-                    className={`py-2 rounded-xl text-sm font-bold transition-all ${radius === r ? 'bg-green-600 text-white' : 'hover:bg-gray-100 text-gray-700'}`}>
-                    {r} km
-                  </button>
-                ))}
-              </div>
-            )}
+
+      {/* ── Header ── */}
+      <div className="bg-white shadow-sm px-4 py-3 z-10 shrink-0">
+        <div className="flex items-center gap-3 mb-3">
+          <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+            <ArrowLeft size={22} />
+          </button>
+          <div className="flex-1">
+            <h1 className="text-lg font-bold text-gray-900">Mapa</h1>
+            <p className="text-xs text-gray-500">{visibleMerchants.length} negocio{visibleMerchants.length !== 1 ? 's' : ''} en {radius} km</p>
           </div>
           {/* Map / List toggle */}
           <div className="flex bg-gray-100 p-1 rounded-xl">
@@ -199,11 +147,62 @@ export const MapView = ({ merchants, userLocation, favorites, onToggleFavorite, 
             ))}
           </div>
         </div>
+
+        {/* ── Radius slider ── */}
+        <div className="flex items-center gap-3 px-1">
+          <span className="text-xs font-semibold text-gray-500 w-8 text-right">0.5</span>
+          <div className="relative flex-1 flex items-center">
+            {/* Track */}
+            <div className="absolute w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-green-500 rounded-full transition-all"
+                style={{ width: `${((radius - 0.5) / (20 - 0.5)) * 100}%` }}
+              />
+            </div>
+            {/* Slider input */}
+            <input
+              type="range"
+              min="0.5" max="20" step="0.5"
+              value={radius}
+              onChange={e => setRadius(parseFloat(e.target.value))}
+              className="relative w-full h-2 appearance-none bg-transparent cursor-pointer"
+              style={{
+                // Custom thumb for all browsers
+                WebkitAppearance: 'none',
+              }}
+            />
+          </div>
+          <span className="text-xs font-semibold text-gray-500 w-7">20</span>
+          <div className="bg-green-600 text-white text-xs font-bold px-2.5 py-1.5 rounded-full min-w-[52px] text-center">
+            {radius} km
+          </div>
+        </div>
+
+        {/* Slider thumb CSS injected once */}
+        <style>{`
+          input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 20px; height: 20px;
+            background: #16a34a;
+            border: 3px solid white;
+            border-radius: 50%;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+            cursor: pointer;
+          }
+          input[type=range]::-moz-range-thumb {
+            width: 20px; height: 20px;
+            background: #16a34a;
+            border: 3px solid white;
+            border-radius: 50%;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+            cursor: pointer;
+          }
+        `}</style>
       </div>
 
+      {/* ── Map / List body ── */}
       {viewMode === 'map' ? (
         <div className="flex-1 relative overflow-hidden">
-          {/* Real Leaflet map */}
           {leafletReady ? (
             <LeafletMap
               userLocation={userLocation}
@@ -215,13 +214,13 @@ export const MapView = ({ merchants, userLocation, favorites, onToggleFavorite, 
           ) : (
             <div className="w-full h-full flex items-center justify-center bg-gray-100">
               <div className="text-center">
-                <div className="w-10 h-10 border-4 border-green-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"/>
+                <div className="w-10 h-10 border-4 border-green-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
                 <p className="text-gray-500 text-sm">Cargando mapa...</p>
               </div>
             </div>
           )}
 
-          {/* Selected merchant card (bottom sheet) */}
+          {/* Selected merchant bottom sheet */}
           {selected && (
             <div className="absolute bottom-4 left-4 right-4 bg-white rounded-2xl shadow-2xl p-4 z-[500]">
               <button onClick={() => setSelected(null)}
@@ -238,7 +237,7 @@ export const MapView = ({ merchants, userLocation, favorites, onToggleFavorite, 
                 <div className="flex-1 min-w-0 pr-6">
                   <h3 className="font-bold text-gray-900 truncate">{selected.name}</h3>
                   <p className="text-xs text-gray-500">{selected.type}</p>
-                  <div className="flex items-center gap-2 mt-1">
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
                     <span className="text-green-600 font-bold">{formatCurrency(selected.savePrice)}</span>
                     <span className="text-gray-400 line-through text-xs">{formatCurrency(selected.originalPrice)}</span>
                     <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${selected.bagsAvailable > 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
@@ -248,7 +247,7 @@ export const MapView = ({ merchants, userLocation, favorites, onToggleFavorite, 
                 </div>
               </div>
               <div className="flex gap-2 mt-3">
-                <button onClick={() => handleNavigate(selected)}
+                <button onClick={() => window.open(getGoogleMapsUrl(selected.location.lat, selected.location.lng, userLocation?.lat, userLocation?.lng), '_blank')}
                   className="flex-1 bg-blue-600 text-white py-2.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-1.5 hover:bg-blue-700 transition-colors">
                   <Navigation size={15} /> Cómo llegar
                 </button>
@@ -261,14 +260,13 @@ export const MapView = ({ merchants, userLocation, favorites, onToggleFavorite, 
           )}
         </div>
       ) : (
-        /* List view */
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {visibleMerchants.length === 0 ? (
             <div className="text-center py-12">
               <p className="text-4xl mb-3">🔍</p>
               <p className="text-gray-600 font-medium">No hay negocios en {radius} km</p>
-              <button onClick={() => setRadius(10)} className="text-green-600 font-semibold mt-2 text-sm">
-                Ampliar a 10 km →
+              <button onClick={() => setRadius(20)} className="text-green-600 font-semibold mt-2 text-sm">
+                Ampliar a 20 km →
               </button>
             </div>
           ) : visibleMerchants.map(m => {
