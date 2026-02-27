@@ -139,15 +139,6 @@ const DocRow = ({ docKey, doc, label }) => {
     </>
   );
 };
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-      {viewing && <DocViewer doc={doc} label={label} onClose={() => setViewing(false)} />}
-    </>
-  );
-};
 
 /* ─── Application card ─── */
 const AppCard = ({ app, onApprove, onReject }) => {
