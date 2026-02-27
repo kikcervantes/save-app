@@ -1,10 +1,11 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Shield, Upload, CheckCircle, Clock, XCircle,
   FileText, Store, Phone, MapPin, AlertCircle,
   ChevronRight, Camera, X, Info
 } from 'lucide-react';
 import { writeLocalStorage, readLocalStorage } from '../../hooks/useLocalStorage';
+import { verificationService } from '../../lib/supabase';
 
 /* ─── STATUS BADGE ─── */
 const StatusBadge = ({ status }) => {
@@ -78,10 +79,37 @@ const DocCard = ({ id, label, description, required, file, onUpload, onRemove })
 /* ─── MAIN VERIFICATION FLOW ─── */
 export const VerificationFlow = ({ merchant, onClose }) => {
   const saved   = readLocalStorage('save-verification') || {};
-  const [step, setStep]   = useState(saved.status === 'pending' || saved.status === 'approved' ? 'status' : 'intro');
-  const [docs,  setDocs]  = useState(saved.docs  || {});
-  const [info,  setInfo]  = useState(saved.info  || { contactName: '', contactPhone: '', taxId: '', website: '' });
+  const [step, setStep]       = useState(saved.status === 'pending' || saved.status === 'approved' ? 'status' : 'intro');
+  const [docs,  setDocs]      = useState(saved.docs  || {});
+  const [info,  setInfo]      = useState(saved.info  || { contactName: '', contactPhone: '', taxId: '', website: '' });
   const [submitting, setSubmitting] = useState(false);
+  const [cloudVerif, setCloudVerif] = useState(null);
+
+  // Load verification status from Supabase on open
+  useEffect(() => {
+    const load = async () => {
+      if (!merchant?.id || !String(merchant.id).includes('-')) return;
+      try {
+        const v = await verificationService.getMine(merchant.id);
+        if (v) {
+          setCloudVerif(v);
+          writeLocalStorage('save-verification', {
+            status: v.status,
+            info: v.info,
+            docs: v.docs,
+            submittedAt: v.submittedAt,
+            rejectionReason: v.rejectionReason,
+          });
+          if (v.status === 'pending' || v.status === 'approved' || v.status === 'rejected') {
+            setStep('status');
+          }
+        }
+      } catch (e) {
+        console.error('Error loading verification:', e);
+      }
+    };
+    load();
+  }, [merchant?.id]); // eslint-disable-line
 
   const DOCUMENTS = [
     { id: 'rfc',      label: 'RFC / Constancia fiscal',      description: 'Constancia de situación fiscal o RFC del negocio',            required: true  },
@@ -101,14 +129,35 @@ export const VerificationFlow = ({ merchant, onClose }) => {
 
   const handleSubmit = async () => {
     setSubmitting(true);
-    await new Promise(r => setTimeout(r, 1200)); // simulate upload
-    const verif = { status: 'pending', docs, info, submittedAt: new Date().toISOString() };
-    writeLocalStorage('save-verification', verif);
-    // Mark merchant as pending
-    const biz = readLocalStorage('save-merchant');
-    if (biz) { writeLocalStorage('save-merchant', { ...biz, verificationStatus: 'pending' }); }
-    setSubmitting(false);
-    setStep('status');
+    try {
+      const merchant = readLocalStorage('save-merchant');
+      const merchantId = merchant?.id;
+
+      if (merchantId && String(merchantId).includes('-')) {
+        // Cloud merchant — upload docs to Supabase Storage
+        await verificationService.submit({ merchantId, info, docs });
+        // Update local state
+        const verif = { status: 'pending', docs, info, submittedAt: new Date().toISOString() };
+        writeLocalStorage('save-verification', verif);
+        if (merchant) writeLocalStorage('save-merchant', { ...merchant, verificationStatus: 'pending' });
+      } else {
+        // No cloud ID yet — save locally (will sync when merchant is created in cloud)
+        await new Promise(r => setTimeout(r, 800));
+        const verif = { status: 'pending', docs, info, submittedAt: new Date().toISOString() };
+        writeLocalStorage('save-verification', verif);
+        if (merchant) writeLocalStorage('save-merchant', { ...merchant, verificationStatus: 'pending' });
+      }
+    } catch (err) {
+      console.error('Error submitting verification:', err);
+      // Fallback to local save
+      const verif = { status: 'pending', docs, info, submittedAt: new Date().toISOString() };
+      writeLocalStorage('save-verification', verif);
+      const merchant = readLocalStorage('save-merchant');
+      if (merchant) writeLocalStorage('save-merchant', { ...merchant, verificationStatus: 'pending' });
+    } finally {
+      setSubmitting(false);
+      setStep('status');
+    }
   };
 
   const status = saved.status || 'draft';

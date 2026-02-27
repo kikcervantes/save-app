@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import {
   Shield, CheckCircle, XCircle, Clock, LogOut,
   Store, FileText, Phone, MapPin, Mail, ChevronDown,
-  ChevronUp, AlertCircle, Search, Eye, Download, Image, X
+  ChevronUp, AlertCircle, Search, Eye, Download, Image, X, RefreshCw
 } from 'lucide-react';
-import { readLocalStorage, writeLocalStorage } from '../../hooks/useLocalStorage';
+import { verificationService } from '../../lib/supabase';
 
 /* ─── Helpers ─── */
 const timeAgo = (iso) => {
@@ -38,14 +38,18 @@ const DOC_LABELS = {
 
 /* ─── Document viewer modal ─── */
 const DocViewer = ({ doc, label, onClose }) => {
-  if (!doc?.data) return null;
-  const isImage = doc.type?.startsWith('image/') || doc.data.startsWith('data:image');
-  const isPDF   = doc.type === 'application/pdf' || doc.data.startsWith('data:application/pdf');
+  if (!doc) return null;
+  // Support both base64 (old) and URL (new Supabase Storage)
+  const src     = doc.url || doc.data || null;
+  if (!src) return null;
+  const isImage = doc.type?.startsWith('image/') || src.match(/\.(jpg|jpeg|png|gif|webp)(\?|$)/i) || (src.startsWith('data:image'));
+  const isPDF   = doc.type === 'application/pdf' || src.match(/\.pdf(\?|$)/i) || src.startsWith('data:application/pdf');
 
   const handleDownload = () => {
     const a = document.createElement('a');
-    a.href     = doc.data;
+    a.href     = src;
     a.download = doc.name || 'documento';
+    a.target   = '_blank';
     a.click();
   };
 
@@ -53,7 +57,6 @@ const DocViewer = ({ doc, label, onClose }) => {
     <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl overflow-hidden max-w-2xl w-full max-h-[90vh] flex flex-col"
         onClick={e => e.stopPropagation()}>
-        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <div>
             <p className="font-bold text-gray-900 text-sm">{label}</p>
@@ -69,12 +72,11 @@ const DocViewer = ({ doc, label, onClose }) => {
             </button>
           </div>
         </div>
-        {/* Content */}
         <div className="flex-1 overflow-auto bg-gray-50 flex items-center justify-center p-4 min-h-[300px]">
           {isImage ? (
-            <img src={doc.data} alt={label} className="max-w-full max-h-[60vh] object-contain rounded-xl shadow-lg" />
+            <img src={src} alt={label} className="max-w-full max-h-[60vh] object-contain rounded-xl shadow-lg" />
           ) : isPDF ? (
-            <iframe src={doc.data} title={label} className="w-full h-[60vh] rounded-xl" />
+            <iframe src={src} title={label} className="w-full h-[60vh] rounded-xl" />
           ) : (
             <div className="text-center">
               <FileText size={48} className="text-gray-300 mx-auto mb-3" />
@@ -94,8 +96,9 @@ const DocViewer = ({ doc, label, onClose }) => {
 /* ─── Document row with preview button ─── */
 const DocRow = ({ docKey, doc, label }) => {
   const [viewing, setViewing] = useState(false);
-  const hasData = !!doc?.data;
-  const isImage = doc?.type?.startsWith('image/') || doc?.data?.startsWith('data:image');
+  const src     = doc?.url || doc?.data || null;
+  const hasData = !!src;
+  const isImage = doc?.type?.startsWith('image/') || src?.match(/\.(jpg|jpeg|png|gif|webp)(\?|$)/i) || src?.startsWith('data:image');
 
   return (
     <>
@@ -108,16 +111,15 @@ const DocRow = ({ docKey, doc, label }) => {
           <p className="text-xs font-semibold text-gray-700">{label}</p>
           {doc && <p className="text-xs text-gray-400 truncate">{doc.name}</p>}
           {doc && !hasData && (
-            <p className="text-xs text-amber-600">⚠️ Archivo no disponible en esta sesión</p>
+            <p className="text-xs text-amber-600">Archivo no disponible</p>
           )}
         </div>
         {doc && (
           <div className="flex items-center gap-1.5 shrink-0">
             {isImage && hasData && (
-              /* Thumbnail preview */
               <div className="w-8 h-8 rounded-lg overflow-hidden border border-green-200 shrink-0 cursor-pointer"
                 onClick={() => setViewing(true)}>
-                <img src={doc.data} alt={label} className="w-full h-full object-cover" />
+                <img src={src} alt={label} className="w-full h-full object-cover" />
               </div>
             )}
             {hasData ? (
@@ -128,6 +130,15 @@ const DocRow = ({ docKey, doc, label }) => {
             ) : (
               <span className="text-xs bg-white border border-gray-200 text-gray-400 px-2 py-1 rounded-lg">
                 Sin datos
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+      {viewing && <DocViewer doc={doc} label={label} onClose={() => setViewing(false)} />}
+    </>
+  );
+};
               </span>
             )}
           </div>
@@ -304,126 +315,79 @@ const AppCard = ({ app, onApprove, onReject }) => {
 /* ─── MAIN ADMIN PANEL ─── */
 export const AdminPanel = ({ onLogout }) => {
   const [applications, setApplications] = useState([]);
-  const [filter,  setFilter]  = useState('pending');
-  const [search,  setSearch]  = useState('');
-  const [loading, setLoading] = useState(true);
+  const [filter,    setFilter]    = useState('pending');
+  const [search,    setSearch]    = useState('');
+  const [loading,   setLoading]   = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    setTimeout(() => {
-      // Load the live merchant submission with FULL doc data (base64 included)
-      const verif    = readLocalStorage('save-verification');
-      const merchant = readLocalStorage('save-merchant');
-
-      // Seed mock applications (without real doc data — for demo only)
-      let apps = readLocalStorage('save-admin-applications-v2') || [
-        {
-          id: 'app_demo_1',
-          businessName: 'Panadería El Trigo Dorado',
-          ownerName: 'María García López',
-          email: 'maria@trigodorado.mx',
-          phone: '5512345678',
-          taxId: 'GLP980412AB3',
-          address: 'Calle Reforma 456, Col. Centro, CDMX',
-          businessType: 'Panadería',
-          website: 'instagram.com/trigodorado',
-          submittedAt: new Date(Date.now() - 2 * 3600000).toISOString(),
-          status: 'pending',
-          docs: {
-            rfc:       { name: 'constancia_fiscal.pdf',      data: null },
-            acta:      { name: 'identificacion_oficial.jpg', data: null },
-            domicilio: { name: 'comprobante_domicilio.pdf',  data: null },
-            local:     null,
-            permiso:   null,
-          },
-        },
-        {
-          id: 'app_demo_2',
-          businessName: 'Café Aroma',
-          ownerName: 'Ana Torres',
-          email: 'ana@cafearoma.mx',
-          phone: '5523456789',
-          taxId: 'TAA900315EF5',
-          address: 'Calle Orizaba 23, Col. Roma Norte, CDMX',
-          businessType: 'Cafetería',
-          website: 'cafearoma.mx',
-          submittedAt: new Date(Date.now() - 3 * 24 * 3600000).toISOString(),
-          status: 'approved',
-          approvedAt: new Date(Date.now() - 2 * 24 * 3600000).toISOString(),
-          docs: {
-            rfc:       { name: 'constancia.pdf',  data: null },
-            acta:      { name: 'ife_ana.jpg',     data: null },
-            domicilio: { name: 'cfe_octubre.pdf', data: null },
-            local:     null,
-            permiso:   null,
-          },
-        },
-      ];
-
-      // Inject live merchant submission WITH REAL DOC DATA
-      if (verif?.status === 'pending' && merchant) {
-        const existingIdx = apps.findIndex(a => a.id === 'app_live');
-        const liveApp = {
-          id:           'app_live',
-          businessName: merchant.name                   || 'Negocio sin nombre',
-          ownerName:    verif.info?.contactName         || merchant.email || '—',
-          email:        merchant.email                  || '—',
-          phone:        verif.info?.contactPhone        || merchant.phone || '—',
-          taxId:        verif.info?.taxId               || '—',
-          address:      merchant.address                || '—',
-          businessType: merchant.type                   || '—',
-          website:      verif.info?.website             || '—',
-          submittedAt:  verif.submittedAt               || new Date().toISOString(),
-          status:       'pending',
-          // ← HERE: keep full doc object including base64 data
-          docs: verif.docs || {},
-        };
-        if (existingIdx >= 0) apps[existingIdx] = liveApp;
-        else apps.unshift(liveApp);
-      }
-
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      // Load real verifications from Supabase
+      const verifications = await verificationService.getAll();
+      // Map to the shape the UI expects
+      const apps = verifications.map(v => ({
+        id:           v.id,
+        verificationId: v.id,
+        merchantId:   v.merchantId,
+        businessName: v.businessName  || 'Sin nombre',
+        ownerName:    v.info?.contactName || '—',
+        email:        v.email         || '—',
+        phone:        v.info?.contactPhone || v.phone || '—',
+        taxId:        v.info?.taxId   || '—',
+        address:      v.address       || '—',
+        businessType: v.businessType  || '—',
+        website:      v.info?.website || '—',
+        submittedAt:  v.submittedAt,
+        reviewedAt:   v.reviewedAt,
+        status:       v.status        || 'pending',
+        rejectionReason: v.rejectionReason,
+        coverImage:   v.coverImage,
+        docs:         v.docs          || {},
+      }));
       setApplications(apps);
+    } catch (err) {
+      console.error('Error loading verifications:', err);
+      // If Supabase fails, show empty state with error
+      setApplications([]);
+    } finally {
       setLoading(false);
-    }, 400);
-  }, []);
-
-  const handleApprove = (id) => {
-    const updated = applications.map(a =>
-      a.id === id ? { ...a, status: 'approved', approvedAt: new Date().toISOString() } : a
-    );
-    setApplications(updated);
-    // Save without base64 to avoid bloating localStorage
-    const lean = updated.map(a => ({
-      ...a,
-      docs: Object.fromEntries(
-        Object.entries(a.docs || {}).map(([k, v]) => [k, v ? { name: v.name, hasFile: true } : null])
-      )
-    }));
-    writeLocalStorage('save-admin-applications-v2', lean);
-
-    if (id === 'app_live') {
-      const v = readLocalStorage('save-verification');
-      if (v) writeLocalStorage('save-verification', { ...v, status: 'approved' });
-      const b = readLocalStorage('save-merchant');
-      if (b) writeLocalStorage('save-merchant', { ...b, verified: true, verificationStatus: 'approved' });
     }
   };
 
-  const handleReject = (id, reason) => {
-    const updated = applications.map(a =>
-      a.id === id ? { ...a, status: 'rejected', rejectionReason: reason } : a
-    );
-    setApplications(updated);
-    const lean = updated.map(a => ({
-      ...a,
-      docs: Object.fromEntries(
-        Object.entries(a.docs || {}).map(([k, v]) => [k, v ? { name: v.name, hasFile: true } : null])
-      )
-    }));
-    writeLocalStorage('save-admin-applications-v2', lean);
+  useEffect(() => { loadData(); }, []); // eslint-disable-line
 
-    if (id === 'app_live') {
-      const v = readLocalStorage('save-verification');
-      if (v) writeLocalStorage('save-verification', { ...v, status: 'rejected', rejectionReason: reason });
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  };
+
+  const handleApprove = async (id) => {
+    const app = applications.find(a => a.id === id);
+    if (!app) return;
+    try {
+      await verificationService.approve(app.verificationId || id, app.merchantId);
+      setApplications(prev => prev.map(a =>
+        a.id === id ? { ...a, status: 'approved', reviewedAt: new Date().toISOString() } : a
+      ));
+    } catch (err) {
+      console.error('Error approving:', err);
+      alert('Error al aprobar. Intenta de nuevo.');
+    }
+  };
+
+  const handleReject = async (id, reason) => {
+    const app = applications.find(a => a.id === id);
+    if (!app) return;
+    try {
+      await verificationService.reject(app.verificationId || id, app.merchantId, reason);
+      setApplications(prev => prev.map(a =>
+        a.id === id ? { ...a, status: 'rejected', rejectionReason: reason } : a
+      ));
+    } catch (err) {
+      console.error('Error rejecting:', err);
+      alert('Error al rechazar. Intenta de nuevo.');
     }
   };
 
@@ -454,10 +418,16 @@ export const AdminPanel = ({ onLogout }) => {
               <p className="text-xs text-slate-400">Panel de verificación de negocios</p>
             </div>
           </div>
-          <button onClick={onLogout}
-            className="flex items-center gap-2 px-3 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-sm font-semibold transition-colors">
-            <LogOut size={16} /> Salir
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={handleRefresh} disabled={refreshing}
+              className="flex items-center gap-2 px-3 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-sm font-semibold transition-colors disabled:opacity-50">
+              <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} /> Actualizar
+            </button>
+            <button onClick={onLogout}
+              className="flex items-center gap-2 px-3 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-sm font-semibold transition-colors">
+              <LogOut size={16} /> Salir
+            </button>
+          </div>
         </div>
       </div>
 

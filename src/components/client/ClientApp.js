@@ -95,32 +95,33 @@ export const ClientApp = ({ user, onLogout, onSwitchToMerchant }) => {
   const refreshMerchants = useCallback(async () => {
     setIsLoading(true);
     try {
-      // Try Supabase first
+      // Supabase getAll() now only returns verified=true merchants
       const cloudMerchants = await merchantService.getAll();
-      // Always build local list (respects verification status from localStorage)
-      const localList = buildMerchantList();
       if (cloudMerchants && cloudMerchants.length > 0) {
-        // Merge: cloud merchants + mock merchants not in cloud
         const cloudIds = new Set(cloudMerchants.map(m => String(m.id)));
         const filteredMock = MOCK_MERCHANTS.filter(m => !cloudIds.has(String(m.id)));
-        // Also include local approved merchant if not in cloud
-        const localApproved = localList.filter(m =>
-          m.id === 'biz_registered' && !cloudIds.has(String(m.id))
-        );
-        setMerchants([...localApproved, ...cloudMerchants, ...filteredMock]);
+        setMerchants([...cloudMerchants, ...filteredMock]);
       } else {
-        setMerchants(localList);
+        setMerchants(MOCK_MERCHANTS);
       }
     } catch {
-      // Supabase unavailable — use localStorage fallback
-      setMerchants(buildMerchantList());
+      // Supabase unavailable — show mock merchants only
+      setMerchants(MOCK_MERCHANTS);
     } finally {
       setIsLoading(false);
     }
   }, []); // eslint-disable-line
 
-  // Load merchants from Supabase on first render
+  // Load merchants on first render
   useEffect(() => { refreshMerchants(); }, []); // eslint-disable-line
+
+  // Listen for real-time merchant changes from Supabase
+  useEffect(() => {
+    const channel = merchantService.subscribe(() => {
+      refreshMerchants();
+    });
+    return () => { try { channel.unsubscribe(); } catch {} };
+  }, [refreshMerchants]);
 
   useEffect(() => {
     if (userLocation) {

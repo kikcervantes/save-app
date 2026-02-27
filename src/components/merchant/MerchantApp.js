@@ -6,7 +6,7 @@ import {
   Shield
 } from 'lucide-react';
 import { useLocalStorage, writeLocalStorage, readLocalStorage } from '../../hooks/useLocalStorage';
-import { merchantService, orderService } from '../../lib/supabase';
+import { merchantService, orderService, storageService } from '../../lib/supabase';
 import { useNotification } from '../../hooks/useNotification';
 import { formatCurrency, formatDate } from '../../utils/helpers';
 import { NotificationContainer } from '../shared/NotificationContainer';
@@ -438,15 +438,40 @@ export const MerchantApp = ({ user, onLogout, onSwitchToClient }) => {
 
   const saveMerchant = async (updated) => {
     setMyMerchant(updated);
-    writeLocalStorage('save-merchant', updated);
     setShowBagEditor(false);
-    // Save to Supabase if it has a cloud ID (UUID format)
+
     try {
-      if (updated.id && String(updated.id).includes('-')) {
-        await merchantService.update(updated);
+      let finalData = { ...updated };
+
+      // If coverImage is base64, upload to Supabase Storage first
+      if (updated.coverImage && updated.coverImage.startsWith('data:')) {
+        try {
+          const merchantId = updated.id || user?.id || 'unknown';
+          const ext = updated.coverImage.includes('png') ? 'png' : 'jpg';
+          const path = `${merchantId}/cover_${Date.now()}.${ext}`;
+          const url  = await storageService.upload('merchant-photos', path, updated.coverImage);
+          finalData  = { ...finalData, coverImage: url };
+        } catch (uploadErr) {
+          console.error('Error uploading photo, keeping local:', uploadErr);
+          // Keep base64 locally if upload fails
+        }
       }
-    } catch {}
-    showNotification('¡Bolsa actualizada correctamente! ✅', 'success');
+
+      // Save to localStorage with final data
+      writeLocalStorage('save-merchant', finalData);
+      setMyMerchant(finalData);
+
+      // Save to Supabase
+      if (finalData.id && String(finalData.id).includes('-')) {
+        await merchantService.update(finalData);
+      }
+      showNotification('Cambios guardados correctamente', 'success');
+    } catch (err) {
+      console.error('Error saving merchant:', err);
+      // Still save locally
+      writeLocalStorage('save-merchant', updated);
+      showNotification('Guardado localmente. Sincronizara cuando haya conexion.', 'warning');
+    }
   };
 
   const updateStock = async (val) => {
