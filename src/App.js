@@ -183,6 +183,20 @@ const SaveApp = () => {
         showNotification('Bienvenido de nuevo!');
       } else {
         const userType = authMode === 'business' ? 'merchant' : 'consumer';
+
+        // One merchant per account — check if this email already has a merchant
+        if (authMode === 'business') {
+          const existingMerchant = localStorage.getItem('save-merchant');
+          if (existingMerchant) {
+            const biz = JSON.parse(existingMerchant);
+            if (biz.email === authForm.email) {
+              showNotification('Ya tienes un negocio registrado con ese email. Solo se permite uno por cuenta.', 'error');
+              setAuthLoading(false);
+              return;
+            }
+          }
+        }
+
         await authService.signUp({
           email: authForm.email, password: authForm.password,
           name: authForm.name, phone: authForm.phone, userType,
@@ -206,7 +220,13 @@ const SaveApp = () => {
       const msg = err.message || '';
       if (msg.includes('Invalid login credentials'))    showNotification('Email o contrasena incorrectos', 'error');
       else if (msg.includes('Email not confirmed'))     showNotification('Confirma tu email antes de entrar. Revisa tu bandeja.', 'error');
-      else if (msg.includes('User already registered') || msg.includes('email already')) showNotification('Ya existe una cuenta con ese email. Intenta iniciar sesion.', 'error');
+      else if (
+        msg.includes('User already registered') ||
+        msg.includes('already been registered') ||
+        msg.includes('already registered') ||
+        msg.includes('email already') ||
+        msg.includes('Email rate limit exceeded')
+      ) showNotification('Ya existe una cuenta con ese email. Intenta iniciar sesion.', 'error');
       else if (msg.includes('Password should be'))     showNotification('La contrasena debe tener al menos 6 caracteres', 'error');
       else showNotification('Error: ' + msg, 'error');
     } finally {
@@ -248,7 +268,7 @@ const SaveApp = () => {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="w-20 h-20 bg-green-100 rounded-2xl mx-auto mb-4 flex items-center justify-center text-5xl">🌮</div>
+          <img src="/save-logo.svg" alt="Save" className="w-20 h-20 mx-auto mb-4" />
           <LoadingSpinner size="md" />
           <p className="text-gray-500 mt-3 text-sm">Cargando...</p>
         </div>
@@ -268,7 +288,7 @@ const SaveApp = () => {
               <div className="absolute bottom-0 right-0 w-60 h-60 bg-white rounded-full translate-x-30 translate-y-30" />
             </div>
             <div className="relative z-10">
-              <div className="w-20 h-20 bg-white/20 rounded-2xl mx-auto mb-4 flex items-center justify-center text-5xl">🌮</div>
+              <img src="/save-logo.svg" alt="Save" className="w-20 h-20 mx-auto mb-4" />
               <h1 className="text-4xl font-bold mb-2">Save</h1>
               <p className="text-green-100 text-lg">Salva comida, ahorra dinero</p>
             </div>

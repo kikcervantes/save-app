@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <defs>
+    <!-- Main green gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a7a4a;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0f5c34;stop-opacity:1" />
+    </linearGradient>
+    <!-- Leaf highlight gradient -->
+    <linearGradient id="leafGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4ade80;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#16a34a;stop-opacity:1" />
+    </linearGradient>
+    <!-- S letter gradient -->
+    <linearGradient id="sGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#d1fae5;stop-opacity:1" />
+    </linearGradient>
+    <!-- Subtle inner shadow for depth -->
+    <filter id="innerGlow">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#0a3d1f" flood-opacity="0.35"/>
+    </filter>
+    <filter id="leafShadow">
+      <feDropShadow dx="1" dy="2" stdDeviation="3" flood-color="#0a3d1f" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <!-- Background circle -->
+  <circle cx="200" cy="200" r="190" fill="url(#bgGrad)" filter="url(#softShadow)"/>
+  
+  <!-- Subtle inner ring for depth -->
+  <circle cx="200" cy="200" r="175" fill="none" stroke="#ffffff" stroke-width="1" stroke-opacity="0.08"/>
+
+  <!-- Decorative arc top-right -->
+  <path d="M 290 80 Q 340 130 335 200" fill="none" stroke="#ffffff" stroke-width="1.5" stroke-opacity="0.12" stroke-dasharray="4 6"/>
+
+  <!-- Main S letterform — bold, geometric, modern -->
+  <!-- Upper arc of S -->
+  <path d="
+    M 148 148
+    C 148 120, 168 108, 200 108
+    C 238 108, 258 124, 258 152
+    C 258 172, 246 186, 222 194
+    L 180 206
+    C 152 214, 140 230, 140 252
+    C 140 280, 162 294, 200 294
+    C 238 294, 260 278, 260 254
+  " 
+  fill="none" 
+  stroke="url(#sGrad)" 
+  stroke-width="38" 
+  stroke-linecap="round"
+  stroke-linejoin="round"/>
+
+  <!-- Leaf accent — sprouting from the top of S -->
+  <g filter="url(#leafShadow)" transform="translate(200, 94)">
+    <!-- Leaf shape -->
+    <path d="M 0 0 C -22 -28, -8 -52, 0 -58 C 8 -52, 22 -28, 0 0 Z" 
+          fill="url(#leafGrad)" transform="rotate(-15)"/>
+    <!-- Leaf vein -->
+    <path d="M 0 0 C -2 -20, -1 -42, 0 -58" 
+          fill="none" stroke="#ffffff" stroke-width="1.5" stroke-opacity="0.5"
+          transform="rotate(-15)"/>
+    <!-- Small stem -->
+    <line x1="0" y1="0" x2="0" y2="10" stroke="#4ade80" stroke-width="3" stroke-linecap="round"/>
+  </g>
+
+  <!-- Subtle sparkle dots -->
+  <circle cx="315" cy="155" r="3" fill="#4ade80" opacity="0.6"/>
+  <circle cx="328" cy="168" r="2" fill="#86efac" opacity="0.4"/>
+  <circle cx="310" cy="172" r="1.5" fill="#4ade80" opacity="0.3"/>
+
+  <circle cx="82" cy="248" r="2.5" fill="#4ade80" opacity="0.5"/>
+  <circle cx="72" cy="262" r="1.5" fill="#86efac" opacity="0.3"/>
+</svg>

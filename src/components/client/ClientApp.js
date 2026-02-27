@@ -42,13 +42,14 @@ export const ClientApp = ({ user, onLogout, onSwitchToMerchant }) => {
   const [showAllFeatured, setShowAllFeatured] = useState(false);
 
   // Merge MOCK_MERCHANTS with any merchant registered via the business mode
+  // Only shows the local merchant if it has been approved
   const buildMerchantList = () => {
     const saved = localStorage.getItem('save-merchant');
     if (!saved) return MOCK_MERCHANTS;
     try {
       const biz = JSON.parse(saved);
-      // Only show the registered merchant to clients if it has been approved
-      if (!biz.verified && biz.verificationStatus !== 'approved') return MOCK_MERCHANTS;
+      const isApproved = biz.verified === true || biz.verificationStatus === 'approved';
+      if (!isApproved) return MOCK_MERCHANTS;
       const bizEntry = {
         ...biz,
         id: biz.id || 'biz_registered',
@@ -61,7 +62,6 @@ export const ClientApp = ({ user, onLogout, onSwitchToMerchant }) => {
         isNew: true,
         badges: ['Verificado ✓'],
         coverImage: biz.coverImage || null,
-        // Use coverImage as the display icon if available
         image: biz.coverImage ? biz.coverImage : (biz.image || '🍽️'),
       };
       const already = MOCK_MERCHANTS.find(m => String(m.id) === String(biz.id));
@@ -97,13 +97,19 @@ export const ClientApp = ({ user, onLogout, onSwitchToMerchant }) => {
     try {
       // Try Supabase first
       const cloudMerchants = await merchantService.getAll();
+      // Always build local list (respects verification status from localStorage)
+      const localList = buildMerchantList();
       if (cloudMerchants && cloudMerchants.length > 0) {
-        // Merge with mock data so demo merchants still show
+        // Merge: cloud merchants + mock merchants not in cloud
         const cloudIds = new Set(cloudMerchants.map(m => String(m.id)));
-        const filtered = MOCK_MERCHANTS.filter(m => !cloudIds.has(String(m.id)));
-        setMerchants([...cloudMerchants, ...filtered]);
+        const filteredMock = MOCK_MERCHANTS.filter(m => !cloudIds.has(String(m.id)));
+        // Also include local approved merchant if not in cloud
+        const localApproved = localList.filter(m =>
+          m.id === 'biz_registered' && !cloudIds.has(String(m.id))
+        );
+        setMerchants([...localApproved, ...cloudMerchants, ...filteredMock]);
       } else {
-        setMerchants(buildMerchantList());
+        setMerchants(localList);
       }
     } catch {
       // Supabase unavailable — use localStorage fallback
@@ -111,7 +117,7 @@ export const ClientApp = ({ user, onLogout, onSwitchToMerchant }) => {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, []); // eslint-disable-line
 
   // Load merchants from Supabase on first render
   useEffect(() => { refreshMerchants(); }, []); // eslint-disable-line
